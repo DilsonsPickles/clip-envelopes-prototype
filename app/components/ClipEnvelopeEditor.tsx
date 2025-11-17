@@ -18,6 +18,38 @@ const PIXELS_PER_SECOND = 100;
 const CANVAS_WIDTH = 2000;
 const CLIP_HEADER_HEIGHT = 20;
 const LEFT_PADDING = 12;
+const INFINITY_ZONE_HEIGHT = 1; // Last 1px represents -infinity dB
+
+// Non-linear dB scale conversion helpers
+const dbToYNonLinear = (db: number, y: number, height: number): number => {
+  const minDb = -60;
+  const maxDb = 12;
+  const usableHeight = height - INFINITY_ZONE_HEIGHT;
+
+  // -Infinity maps to the bottom (y + height)
+  if (db === -Infinity || db < minDb) {
+    return y + height;
+  }
+
+  // Linear mapping for normal dB range, leaving bottom 1px for -infinity
+  const normalized = (db - minDb) / (maxDb - minDb);
+  return y + usableHeight - normalized * usableHeight;
+};
+
+const yToDbNonLinear = (yPos: number, y: number, height: number): number => {
+  const minDb = -60;
+  const maxDb = 12;
+  const usableHeight = height - INFINITY_ZONE_HEIGHT;
+
+  // Last 1px at the bottom represents -infinity
+  if (yPos >= y + usableHeight) {
+    return -Infinity;
+  }
+
+  // Linear mapping for normal dB range
+  const normalized = (y + usableHeight - yPos) / usableHeight;
+  return Math.max(minDb, Math.min(maxDb, minDb + normalized * (maxDb - minDb)));
+};
 
 export default function ClipEnvelopeEditor() {
   const [envelopeMode, setEnvelopeMode] = useState(false);
@@ -188,20 +220,6 @@ export default function ClipEnvelopeEditor() {
   const handleEnvelopeClick = (x: number, y: number): boolean => {
     const CLICK_THRESHOLD = 15;
 
-    const dbToY = (db: number, trackY: number, height: number) => {
-      const minDb = -60;
-      const maxDb = 12;
-      const normalized = (db - minDb) / (maxDb - minDb);
-      return trackY + height - normalized * height;
-    };
-
-    const yToDb = (y: number, trackY: number, height: number) => {
-      const minDb = -60;
-      const maxDb = 12;
-      const normalized = (trackY + height - y) / height;
-      return minDb + normalized * (maxDb - minDb);
-    };
-
     for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
       const track = tracks[trackIndex];
       const trackY = INITIAL_GAP + trackIndex * (TRACK_HEIGHT + TRACK_GAP);
@@ -219,7 +237,7 @@ export default function ClipEnvelopeEditor() {
           for (let i = 0; i < clip.envelopePoints.length; i++) {
             const point = clip.envelopePoints[i];
             const px = clipX + (point.time / clip.duration) * clipWidth;
-            const py = dbToY(point.db, clipY, clipHeight);
+            const py = dbToYNonLinear(point.db, clipY, clipHeight);
 
             const distance = Math.sqrt((x - px) ** 2 + (y - py) ** 2);
             if (distance <= CLICK_THRESHOLD) {
@@ -282,7 +300,7 @@ export default function ClipEnvelopeEditor() {
 
             if (clip.envelopePoints.length === 0) {
               // Default 0dB line
-              const y0 = dbToY(0, clipY, clipHeight);
+              const y0 = dbToYNonLinear(0, clipY, clipHeight);
               segments.push({
                 x1: clipX,
                 y1: y0,
@@ -293,9 +311,9 @@ export default function ClipEnvelopeEditor() {
               const points = clip.envelopePoints;
 
               // Segment from clip start to first point
-              const startY = points[0].time === 0 ? dbToY(points[0].db, clipY, clipHeight) : dbToY(0, clipY, clipHeight);
+              const startY = points[0].time === 0 ? dbToYNonLinear(points[0].db, clipY, clipHeight) : dbToYNonLinear(0, clipY, clipHeight);
               const firstPointX = clipX + (points[0].time / clip.duration) * clipWidth;
-              const firstPointY = dbToY(points[0].db, clipY, clipHeight);
+              const firstPointY = dbToYNonLinear(points[0].db, clipY, clipHeight);
 
               if (points[0].time > 0) {
                 segments.push({
@@ -309,9 +327,9 @@ export default function ClipEnvelopeEditor() {
               // Segments between points
               for (let i = 0; i < points.length - 1; i++) {
                 const p1x = clipX + (points[i].time / clip.duration) * clipWidth;
-                const p1y = dbToY(points[i].db, clipY, clipHeight);
+                const p1y = dbToYNonLinear(points[i].db, clipY, clipHeight);
                 const p2x = clipX + (points[i + 1].time / clip.duration) * clipWidth;
-                const p2y = dbToY(points[i + 1].db, clipY, clipHeight);
+                const p2y = dbToYNonLinear(points[i + 1].db, clipY, clipHeight);
 
                 segments.push({ x1: p1x, y1: p1y, x2: p2x, y2: p2y });
               }
@@ -320,7 +338,7 @@ export default function ClipEnvelopeEditor() {
               const lastPoint = points[points.length - 1];
               if (lastPoint.time < clip.duration) {
                 const lastPointX = clipX + (lastPoint.time / clip.duration) * clipWidth;
-                const lastPointY = dbToY(lastPoint.db, clipY, clipHeight);
+                const lastPointY = dbToYNonLinear(lastPoint.db, clipY, clipHeight);
                 segments.push({
                   x1: lastPointX,
                   y1: lastPointY,
@@ -343,7 +361,7 @@ export default function ClipEnvelopeEditor() {
 
           if (minDistance <= 16) {
             const relativeTime = ((x - clipX) / clipWidth) * clip.duration;
-            const db = yToDb(y, clipY, clipHeight);
+            const db = yToDbNonLinear(y, clipY, clipHeight);
             const newPoint: EnvelopePoint = { time: relativeTime, db };
             const newTracks = [...tracks];
             newTracks[trackIndex].clips = newTracks[trackIndex].clips.map((c) =>
@@ -430,15 +448,8 @@ export default function ClipEnvelopeEditor() {
       const { clip, pointIndex, clipX, clipWidth, clipY, clipHeight, trackIndex } =
         envelopeDragStateRef.current;
 
-      const yToDb = (y: number, trackY: number, height: number) => {
-        const minDb = -60;
-        const maxDb = 12;
-        const normalized = (trackY + height - y) / height;
-        return Math.max(minDb, Math.min(maxDb, minDb + normalized * (maxDb - minDb)));
-      };
-
       const relativeTime = Math.max(0, Math.min(clip.duration, ((x - clipX) / clipWidth) * clip.duration));
-      const db = yToDb(y, clipY, clipHeight);
+      const db = yToDbNonLinear(y, clipY, clipHeight);
 
       // Show tooltip with dB value
       setTooltip({
@@ -645,15 +656,7 @@ export default function ClipEnvelopeEditor() {
           const waveformY = trackY + CLIP_HEADER_HEIGHT;
           const waveformHeight = TRACK_HEIGHT - CLIP_HEADER_HEIGHT;
 
-          // Helper to convert dB to Y position
-          const dbToY = (db: number) => {
-            const minDb = -60;
-            const maxDb = 12;
-            const normalized = (db - minDb) / (maxDb - minDb);
-            return waveformY + waveformHeight - normalized * waveformHeight;
-          };
-
-          const zeroDB_Y = dbToY(0);
+          const zeroDB_Y = dbToYNonLinear(0, waveformY, waveformHeight);
           const relativeX = (x - clipX) / clipWidth;
           const time = relativeX * clip.duration;
 
@@ -666,16 +669,16 @@ export default function ClipEnvelopeEditor() {
             const points = clip.envelopePoints;
 
             if (time <= points[0].time) {
-              envelopeY = points[0].time === 0 ? dbToY(points[0].db) : zeroDB_Y;
+              envelopeY = points[0].time === 0 ? dbToYNonLinear(points[0].db, waveformY, waveformHeight) : zeroDB_Y;
             } else if (time >= points[points.length - 1].time) {
-              envelopeY = dbToY(points[points.length - 1].db);
+              envelopeY = dbToYNonLinear(points[points.length - 1].db, waveformY, waveformHeight);
             } else {
               // Find the two points we're between
               for (let i = 0; i < points.length - 1; i++) {
                 if (time >= points[i].time && time <= points[i + 1].time) {
                   const t = (time - points[i].time) / (points[i + 1].time - points[i].time);
                   const db = points[i].db + t * (points[i + 1].db - points[i].db);
-                  envelopeY = dbToY(db);
+                  envelopeY = dbToYNonLinear(db, waveformY, waveformHeight);
                   break;
                 }
               }

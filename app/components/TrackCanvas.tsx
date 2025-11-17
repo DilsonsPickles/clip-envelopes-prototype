@@ -21,6 +21,38 @@ interface TrackCanvasProps {
 
 const CLIP_HEADER_HEIGHT = 20;
 const LEFT_PADDING = 12;
+const INFINITY_ZONE_HEIGHT = 1; // Last 1px represents -infinity dB
+
+// Non-linear dB scale conversion helpers
+const dbToYNonLinear = (db: number, y: number, height: number): number => {
+  const minDb = -60;
+  const maxDb = 12;
+  const usableHeight = height - INFINITY_ZONE_HEIGHT;
+
+  // -Infinity maps to the bottom (y + height)
+  if (db === -Infinity || db < minDb) {
+    return y + height;
+  }
+
+  // Linear mapping for normal dB range, leaving bottom 1px for -infinity
+  const normalized = (db - minDb) / (maxDb - minDb);
+  return y + usableHeight - normalized * usableHeight;
+};
+
+const yToDbNonLinear = (yPos: number, y: number, height: number): number => {
+  const minDb = -60;
+  const maxDb = 12;
+  const usableHeight = height - INFINITY_ZONE_HEIGHT;
+
+  // Last 1px at the bottom represents -infinity
+  if (yPos >= y + usableHeight) {
+    return -Infinity;
+  }
+
+  // Linear mapping for normal dB range
+  const normalized = (y + usableHeight - yPos) / usableHeight;
+  return Math.max(minDb, Math.min(maxDb, minDb + normalized * (maxDb - minDb)));
+};
 
 export default function TrackCanvas({
   tracks,
@@ -427,14 +459,7 @@ export default function TrackCanvas({
     selectionWidth: number,
     height: number
   ) => {
-    const dbToY = (db: number) => {
-      const minDb = -60;
-      const maxDb = 12;
-      const normalized = (db - minDb) / (maxDb - minDb);
-      return y + height - normalized * height;
-    };
-
-    const zeroDB_Y = dbToY(0);
+    const zeroDB_Y = dbToYNonLinear(0, y, height);
     const clipBottom = y + height;
 
     // Use colors that blend with the selection highlight
@@ -471,18 +496,18 @@ export default function TrackCanvas({
       // Draw fill through control points
       const startY =
         clip.envelopePoints[0].time === 0
-          ? dbToY(clip.envelopePoints[0].db)
+          ? dbToYNonLinear(clip.envelopePoints[0].db, y, height)
           : zeroDB_Y;
       ctx.moveTo(clipX, startY);
 
       clip.envelopePoints.forEach((point) => {
         const px = clipX + (point.time / clip.duration) * clipWidth;
-        const py = dbToY(point.db);
+        const py = dbToYNonLinear(point.db, y, height);
         ctx.lineTo(px, py);
       });
 
       const lastPoint = clip.envelopePoints[clip.envelopePoints.length - 1];
-      const endY = lastPoint.time < clip.duration ? dbToY(lastPoint.db) : dbToY(lastPoint.db);
+      const endY = lastPoint.time < clip.duration ? dbToYNonLinear(lastPoint.db, y, height) : dbToYNonLinear(lastPoint.db, y, height);
 
       if (lastPoint.time < clip.duration) {
         ctx.lineTo(clipX + clipWidth, endY);
@@ -510,14 +535,7 @@ export default function TrackCanvas({
     timeSelection: TimeSelection | null,
     isSelected: boolean
   ) => {
-    const dbToY = (db: number) => {
-      const minDb = -60;
-      const maxDb = 12;
-      const normalized = (db - minDb) / (maxDb - minDb);
-      return y + height - normalized * height;
-    };
-
-    const zeroDB_Y = dbToY(0);
+    const zeroDB_Y = dbToYNonLinear(0, y, height);
     const clipBottom = y + height;
 
     // Check if there's a selection on this track
@@ -572,18 +590,18 @@ export default function TrackCanvas({
       // Draw fill through control points
       const startY =
         clip.envelopePoints[0].time === 0
-          ? dbToY(clip.envelopePoints[0].db)
+          ? dbToYNonLinear(clip.envelopePoints[0].db, y, height)
           : zeroDB_Y;
       ctx.moveTo(x, startY);
 
       clip.envelopePoints.forEach((point) => {
         const px = x + (point.time / clip.duration) * width;
-        const py = dbToY(point.db);
+        const py = dbToYNonLinear(point.db, y, height);
         ctx.lineTo(px, py);
       });
 
       const lastPoint = clip.envelopePoints[clip.envelopePoints.length - 1];
-      const endY = lastPoint.time < clip.duration ? dbToY(lastPoint.db) : dbToY(lastPoint.db);
+      const endY = lastPoint.time < clip.duration ? dbToYNonLinear(lastPoint.db, y, height) : dbToYNonLinear(lastPoint.db, y, height);
 
       if (lastPoint.time < clip.duration) {
         ctx.lineTo(x + width, endY);
@@ -607,14 +625,7 @@ export default function TrackCanvas({
     width: number,
     height: number
   ) => {
-    const dbToY = (db: number) => {
-      const minDb = -60;
-      const maxDb = 12;
-      const normalized = (db - minDb) / (maxDb - minDb);
-      return y + height - normalized * height;
-    };
-
-    const zeroDB_Y = dbToY(0);
+    const zeroDB_Y = dbToYNonLinear(0, y, height);
 
     // Use solid red color for envelope line
     const envelopeLineColor = 'red';
@@ -634,19 +645,19 @@ export default function TrackCanvas({
       // Draw envelope through control points
       const startY =
         clip.envelopePoints[0].time === 0
-          ? dbToY(clip.envelopePoints[0].db)
+          ? dbToYNonLinear(clip.envelopePoints[0].db, y, height)
           : zeroDB_Y;
       ctx.moveTo(x, startY);
 
       clip.envelopePoints.forEach((point) => {
         const px = x + (point.time / clip.duration) * width;
-        const py = dbToY(point.db);
+        const py = dbToYNonLinear(point.db, y, height);
         ctx.lineTo(px, py);
       });
 
       const lastPoint = clip.envelopePoints[clip.envelopePoints.length - 1];
       if (lastPoint.time < clip.duration) {
-        ctx.lineTo(x + width, dbToY(lastPoint.db));
+        ctx.lineTo(x + width, dbToYNonLinear(lastPoint.db, y, height));
       }
     }
 
@@ -655,7 +666,7 @@ export default function TrackCanvas({
     // Draw control points
     clip.envelopePoints.forEach((point) => {
       const px = x + (point.time / clip.duration) * width;
-      const py = dbToY(point.db);
+      const py = dbToYNonLinear(point.db, y, height);
 
       // Outer circle with red color
       ctx.fillStyle = envelopeLineColor;

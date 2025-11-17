@@ -18,7 +18,7 @@ export default function Tooltip({ x, y, db, visible }: TooltipProps) {
         top: y - 25,
       }}
     >
-      {db >= 0 ? '+' : ''}{db.toFixed(1)} dB
+      {db === -Infinity ? '-∞ dB' : `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`}
     </div>
   );
 }
