@@ -10,6 +10,7 @@ export interface Clip {
   duration: number;
   waveform: number[];
   envelopePoints: EnvelopePoint[];
+  selected?: boolean;
 }
 
 export interface Track {

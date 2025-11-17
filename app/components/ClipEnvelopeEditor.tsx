@@ -5,20 +5,25 @@ import Toolbar from './Toolbar';
 import TrackHeader from './TrackHeader';
 import Ruler from './Ruler';
 import TrackCanvas from './TrackCanvas';
+import TimelineRuler from './TimelineRuler';
 import Tooltip from './Tooltip';
 import { Track, Clip, EnvelopePoint, DragState, EnvelopeDragState, TimeSelection, TimeSelectionDragState } from './types';
+import { theme } from '../theme';
 
 // Configuration
 const TRACK_HEIGHT = 150;
+const TRACK_GAP = 2;
 const PIXELS_PER_SECOND = 100;
 const CANVAS_WIDTH = 2000;
 const CLIP_HEADER_HEIGHT = 20;
+const LEFT_PADDING = 12;
 
 export default function ClipEnvelopeEditor() {
   const [envelopeMode, setEnvelopeMode] = useState(false);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [selectedTrackIndices, setSelectedTrackIndices] = useState<number[]>([]);
   const [timeSelection, setTimeSelection] = useState<TimeSelection | null>(null);
+  const [hoveredClipHeader, setHoveredClipHeader] = useState<{ clipId: number; trackIndex: number } | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; db: number; visible: boolean }>({
     x: 0,
     y: 0,
@@ -34,16 +39,27 @@ export default function ClipEnvelopeEditor() {
     let clipIdCounter = 1;
 
     const generateWaveform = (duration: number): number[] => {
-      const sampleCount = Math.floor(duration * 100);
+      const sampleCount = Math.floor(duration * 50000); // Very high sample count for solid waveform appearance
       const waveform: number[] = [];
 
       for (let i = 0; i < sampleCount; i++) {
         const t = i / sampleCount;
-        const value =
-          Math.sin(t * Math.PI * 8) * 0.8 +
-          Math.sin(t * Math.PI * 20) * 0.3 +
-          Math.sin(t * Math.PI * 50) * 0.15 +
-          (Math.random() - 0.5) * 0.1;
+
+        // Create envelope variation that mimics speech patterns
+        // Speech has bursts of activity with varying amplitude
+        const speechEnvelope =
+          Math.abs(Math.sin(t * Math.PI * 3 + Math.random() * 0.5)) * // Syllable-like patterns
+          (0.3 + Math.abs(Math.sin(t * Math.PI * 0.5)) * 0.7) * // Sentence-level variation
+          (0.5 + Math.random() * 0.5); // Random variation
+
+        // High-frequency content (voice formants)
+        const voiceContent =
+          Math.sin(t * Math.PI * 200 + Math.random() * 2) * 0.4 +
+          Math.sin(t * Math.PI * 500 + Math.random() * 3) * 0.3 +
+          Math.sin(t * Math.PI * 1200 + Math.random() * 5) * 0.2 +
+          (Math.random() - 0.5) * 0.3; // Noise for breathiness
+
+        const value = voiceContent * speechEnvelope;
         waveform.push(Math.max(-1, Math.min(1, value)));
       }
 
@@ -101,7 +117,7 @@ export default function ClipEnvelopeEditor() {
     const y = e.clientY - rect.top;
 
     // Determine which track was clicked
-    const clickedTrackIndex = Math.floor(y / TRACK_HEIGHT);
+    const clickedTrackIndex = Math.floor(y / (TRACK_HEIGHT + TRACK_GAP));
     if (clickedTrackIndex >= 0 && clickedTrackIndex < tracks.length) {
       setSelectedTrackIndices([clickedTrackIndex]);
     }
@@ -109,17 +125,26 @@ export default function ClipEnvelopeEditor() {
     // Check for clip header dragging (works in both modes)
     for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
       const track = tracks[trackIndex];
-      const trackY = trackIndex * TRACK_HEIGHT;
+      const trackY = trackIndex * (TRACK_HEIGHT + TRACK_GAP);
 
       if (y < trackY || y > trackY + TRACK_HEIGHT) continue;
 
       for (const clip of track.clips) {
-        const clipX = clip.startTime * PIXELS_PER_SECOND;
+        const clipX = LEFT_PADDING + clip.startTime * PIXELS_PER_SECOND;
         const clipWidth = clip.duration * PIXELS_PER_SECOND;
         const clipHeaderY = trackY;
 
         // Only allow dragging if clicking on the header
         if (x >= clipX && x <= clipX + clipWidth && y >= clipHeaderY && y <= clipHeaderY + CLIP_HEADER_HEIGHT) {
+          // Select the clip
+          const newTracks = [...tracks];
+          newTracks.forEach((track) => {
+            track.clips.forEach((c) => {
+              c.selected = c.id === clip.id;
+            });
+          });
+          setTracks(newTracks);
+
           // Set time selection to the clip's duration
           setTimeSelection({
             startTime: clip.startTime,
@@ -176,12 +201,12 @@ export default function ClipEnvelopeEditor() {
 
     for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
       const track = tracks[trackIndex];
-      const trackY = trackIndex * TRACK_HEIGHT;
+      const trackY = trackIndex * (TRACK_HEIGHT + TRACK_GAP);
 
       if (y < trackY || y > trackY + TRACK_HEIGHT) continue;
 
       for (const clip of track.clips) {
-        const clipX = clip.startTime * PIXELS_PER_SECOND;
+        const clipX = LEFT_PADDING + clip.startTime * PIXELS_PER_SECOND;
         const clipWidth = clip.duration * PIXELS_PER_SECOND;
         const clipY = trackY + CLIP_HEADER_HEIGHT;
         const clipHeight = TRACK_HEIGHT - CLIP_HEADER_HEIGHT;
@@ -213,43 +238,108 @@ export default function ClipEnvelopeEditor() {
           }
 
           // Create new point only if clicking within 16px of the envelope curve
-          const relativeTime = ((x - clipX) / clipWidth) * clip.duration;
+          // Calculate distance from click point to the nearest point on the envelope line
 
-          // Calculate the expected Y position of the envelope at this time
-          const getEnvelopeYAtTime = (time: number): number => {
+          // Helper function to calculate distance from point to line segment
+          const distanceToLineSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number): number => {
+            const A = px - x1;
+            const B = py - y1;
+            const C = x2 - x1;
+            const D = y2 - y1;
+
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+
+            if (lenSq !== 0) {
+              param = dot / lenSq;
+            }
+
+            let xx, yy;
+
+            if (param < 0) {
+              xx = x1;
+              yy = y1;
+            } else if (param > 1) {
+              xx = x2;
+              yy = y2;
+            } else {
+              xx = x1 + param * C;
+              yy = y1 + param * D;
+            }
+
+            const dx = px - xx;
+            const dy = py - yy;
+            return Math.sqrt(dx * dx + dy * dy);
+          };
+
+          // Build the envelope line segments
+          const buildEnvelopeSegments = (): Array<{x1: number, y1: number, x2: number, y2: number}> => {
+            const segments: Array<{x1: number, y1: number, x2: number, y2: number}> = [];
+
             if (clip.envelopePoints.length === 0) {
               // Default 0dB line
-              return dbToY(0, clipY, clipHeight);
-            }
+              const y0 = dbToY(0, clipY, clipHeight);
+              segments.push({
+                x1: clipX,
+                y1: y0,
+                x2: clipX + clipWidth,
+                y2: y0
+              });
+            } else {
+              const points = clip.envelopePoints;
 
-            const points = clip.envelopePoints;
+              // Segment from clip start to first point
+              const startY = points[0].time === 0 ? dbToY(points[0].db, clipY, clipHeight) : dbToY(0, clipY, clipHeight);
+              const firstPointX = clipX + (points[0].time / clip.duration) * clipWidth;
+              const firstPointY = dbToY(points[0].db, clipY, clipHeight);
 
-            // Before first point
-            if (time <= points[0].time) {
-              return dbToY(points[0].db, clipY, clipHeight);
-            }
+              if (points[0].time > 0) {
+                segments.push({
+                  x1: clipX,
+                  y1: startY,
+                  x2: firstPointX,
+                  y2: firstPointY
+                });
+              }
 
-            // After last point
-            if (time >= points[points.length - 1].time) {
-              return dbToY(points[points.length - 1].db, clipY, clipHeight);
-            }
+              // Segments between points
+              for (let i = 0; i < points.length - 1; i++) {
+                const p1x = clipX + (points[i].time / clip.duration) * clipWidth;
+                const p1y = dbToY(points[i].db, clipY, clipHeight);
+                const p2x = clipX + (points[i + 1].time / clip.duration) * clipWidth;
+                const p2y = dbToY(points[i + 1].db, clipY, clipHeight);
 
-            // Between points - interpolate
-            for (let i = 0; i < points.length - 1; i++) {
-              if (time >= points[i].time && time <= points[i + 1].time) {
-                const t = (time - points[i].time) / (points[i + 1].time - points[i].time);
-                const interpolatedDb = points[i].db + t * (points[i + 1].db - points[i].db);
-                return dbToY(interpolatedDb, clipY, clipHeight);
+                segments.push({ x1: p1x, y1: p1y, x2: p2x, y2: p2y });
+              }
+
+              // Segment from last point to clip end
+              const lastPoint = points[points.length - 1];
+              if (lastPoint.time < clip.duration) {
+                const lastPointX = clipX + (lastPoint.time / clip.duration) * clipWidth;
+                const lastPointY = dbToY(lastPoint.db, clipY, clipHeight);
+                segments.push({
+                  x1: lastPointX,
+                  y1: lastPointY,
+                  x2: clipX + clipWidth,
+                  y2: lastPointY
+                });
               }
             }
 
-            return dbToY(0, clipY, clipHeight);
+            return segments;
           };
 
-          const envelopeY = getEnvelopeYAtTime(relativeTime);
-          const distanceFromCurve = Math.abs(y - envelopeY);
+          const segments = buildEnvelopeSegments();
+          let minDistance = Infinity;
 
-          if (distanceFromCurve <= 16) {
+          for (const segment of segments) {
+            const dist = distanceToLineSegment(x, y, segment.x1, segment.y1, segment.x2, segment.y2);
+            minDistance = Math.min(minDistance, dist);
+          }
+
+          if (minDistance <= 16) {
+            const relativeTime = ((x - clipX) / clipWidth) * clip.duration;
             const db = yToDb(y, clipY, clipHeight);
             const newPoint: EnvelopePoint = { time: relativeTime, db };
             const newTracks = [...tracks];
@@ -308,8 +398,8 @@ export default function ClipEnvelopeEditor() {
     if (timeSelectionDragStateRef.current) {
       timeSelectionDragStateRef.current.currentX = x;
 
-      const startTime = timeSelectionDragStateRef.current.startX / PIXELS_PER_SECOND;
-      const endTime = x / PIXELS_PER_SECOND;
+      const startTime = (timeSelectionDragStateRef.current.startX - LEFT_PADDING) / PIXELS_PER_SECOND;
+      const endTime = (x - LEFT_PADDING) / PIXELS_PER_SECOND;
 
       setTimeSelection({
         startTime: Math.min(startTime, endTime),
@@ -317,7 +407,7 @@ export default function ClipEnvelopeEditor() {
       });
 
       // Update selected tracks based on drag range
-      const currentTrackIndex = Math.floor(y / TRACK_HEIGHT);
+      const currentTrackIndex = Math.floor(y / (TRACK_HEIGHT + TRACK_GAP));
       const startTrackIndex = timeSelectionDragStateRef.current.startTrackIndex;
       const minTrack = Math.max(0, Math.min(startTrackIndex, currentTrackIndex));
       const maxTrack = Math.min(tracks.length - 1, Math.max(startTrackIndex, currentTrackIndex));
@@ -437,8 +527,8 @@ export default function ClipEnvelopeEditor() {
     }
 
     // Update clip position
-    const newStartTime = Math.max(0, (x - dragStateRef.current.offsetX) / PIXELS_PER_SECOND);
-    const newTrackIndex = Math.floor(y / TRACK_HEIGHT);
+    const newStartTime = Math.max(0, (x - dragStateRef.current.offsetX - LEFT_PADDING) / PIXELS_PER_SECOND);
+    const newTrackIndex = Math.floor(y / (TRACK_HEIGHT + TRACK_GAP));
 
     const newTracks = [...tracks];
     const { clip, trackIndex } = dragStateRef.current;
@@ -517,43 +607,108 @@ export default function ClipEnvelopeEditor() {
 
   const updateCursor = (canvas: HTMLCanvasElement, x: number, y: number) => {
     let overClipHeader = false;
+    let foundHoveredHeader: { clipId: number; trackIndex: number } | null = null;
 
     for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
       const track = tracks[trackIndex];
-      const trackY = trackIndex * TRACK_HEIGHT;
+      const trackY = trackIndex * (TRACK_HEIGHT + TRACK_GAP);
 
       if (y < trackY || y > trackY + TRACK_HEIGHT) continue;
 
       for (const clip of track.clips) {
-        const clipX = clip.startTime * PIXELS_PER_SECOND;
+        const clipX = LEFT_PADDING + clip.startTime * PIXELS_PER_SECOND;
         const clipWidth = clip.duration * PIXELS_PER_SECOND;
         const clipHeaderY = trackY;
 
         if (x >= clipX && x <= clipX + clipWidth && y >= clipHeaderY && y <= clipHeaderY + CLIP_HEADER_HEIGHT) {
           overClipHeader = true;
+          foundHoveredHeader = { clipId: clip.id, trackIndex };
           break;
         }
       }
       if (overClipHeader) break;
     }
 
+    // Update hovered clip header state
+    if (foundHoveredHeader) {
+      if (!hoveredClipHeader || hoveredClipHeader.clipId !== foundHoveredHeader.clipId || hoveredClipHeader.trackIndex !== foundHoveredHeader.trackIndex) {
+        setHoveredClipHeader(foundHoveredHeader);
+      }
+    } else if (hoveredClipHeader) {
+      setHoveredClipHeader(null);
+    }
+
     canvas.style.cursor = overClipHeader ? 'grab' : 'default';
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#1a1a1a]">
+    <div className="flex flex-col h-screen" style={{ backgroundColor: theme.canvas }}>
       <Toolbar envelopeMode={envelopeMode} onToggleEnvelope={handleToggleEnvelope} />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Track headers */}
-        <div className="w-[200px] bg-[#2a2a2a] border-r border-[#3a3a3a] overflow-y-auto">
-          {tracks.map((track) => (
-            <TrackHeader key={track.id} trackName={track.name} />
-          ))}
+        <div
+          className="w-[200px] border-r flex flex-col"
+          style={{
+            backgroundColor: theme.trackHeaderPanel,
+            borderColor: theme.trackHeaderBorder,
+          }}
+        >
+          {/* Track header panel */}
+          <div
+            className="h-[40px] flex items-center justify-between px-3 border-b"
+            style={{
+              borderColor: theme.trackHeaderBorder,
+            }}
+          >
+            <span
+              className="font-medium text-sm"
+              style={{ color: theme.text }}
+            >
+              Tracks
+            </span>
+            <button
+              className="h-[28px] px-3 text-sm rounded border"
+              style={{
+                backgroundColor: theme.toolbar,
+                color: theme.text,
+                borderColor: theme.trackHeaderBorder,
+              }}
+              onClick={() => {
+                const newTrack: Track = {
+                  id: tracks.length + 1,
+                  name: `Track ${tracks.length + 1}`,
+                  clips: [],
+                };
+                setTracks([...tracks, newTrack]);
+              }}
+            >
+              Add track
+            </button>
+          </div>
+
+          {/* Track list */}
+          <div className="flex-1 overflow-y-auto">
+            {tracks.map((track) => (
+              <TrackHeader key={track.id} trackName={track.name} />
+            ))}
+          </div>
         </div>
 
         {/* Canvas container */}
-        <div className="flex-1 overflow-auto relative">
+        <div className="flex-1 overflow-auto relative flex flex-col">
+          {/* Timeline ruler */}
+          <div className="sticky top-0 z-10">
+            <TimelineRuler
+              canvasWidth={CANVAS_WIDTH}
+              pixelsPerSecond={PIXELS_PER_SECOND}
+              height={40}
+              leftPadding={12}
+              timeSelection={timeSelection}
+            />
+          </div>
+
+          {/* Track canvas */}
           <TrackCanvas
             tracks={tracks}
             envelopeMode={envelopeMode}
@@ -562,6 +717,7 @@ export default function ClipEnvelopeEditor() {
             canvasWidth={CANVAS_WIDTH}
             selectedTrackIndices={selectedTrackIndices}
             timeSelection={timeSelection}
+            hoveredClipHeader={hoveredClipHeader}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -569,7 +725,14 @@ export default function ClipEnvelopeEditor() {
         </div>
 
         {/* Rulers (fixed on right) */}
-        <div className="fixed right-0 top-[50px] w-[50px] h-[calc(100vh-50px)] bg-[#2a2a2a] pointer-events-none z-10">
+        <div
+          className="fixed right-0 top-[50px] w-[50px] h-[calc(100vh-50px)] pointer-events-none z-10 border-l"
+          style={{
+            backgroundColor: theme.ruler,
+            borderColor: theme.rulerBorder,
+            paddingTop: '40px',
+          }}
+        >
           {tracks.map((track) => (
             <Ruler key={track.id} />
           ))}
