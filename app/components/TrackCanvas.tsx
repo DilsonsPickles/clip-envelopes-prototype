@@ -41,7 +41,7 @@ export default function TrackCanvas({
     if (!canvas || tracks.length === 0) return;
 
     canvas.width = canvasWidth;
-    canvas.height = tracks.length * trackHeight + Math.max(0, tracks.length - 1) * 2; // Add 2px gap between tracks
+    canvas.height = 2 + tracks.length * trackHeight + Math.max(0, tracks.length - 1) * 2; // 2px initial gap + track heights + 2px gaps between tracks
 
     const dpr = window.devicePixelRatio || 1;
     canvas.style.width = canvas.width + 'px';
@@ -63,10 +63,12 @@ export default function TrackCanvas({
     ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
     const TRACK_GAP = 2;
+    const INITIAL_GAP = 2; // 2px gap above first track
 
     tracks.forEach((track, trackIndex) => {
-      const y = trackIndex * (trackHeight + TRACK_GAP);
+      const y = INITIAL_GAP + trackIndex * (trackHeight + TRACK_GAP);
       const isSelected = selectedTrackIndices.includes(trackIndex);
+      const isFocused = isSelected; // For now, focused state follows selection state
 
       // Draw track background
       // Canvas background: #212433
@@ -80,27 +82,47 @@ export default function TrackCanvas({
         ctx.fillRect(0, y, canvasWidth, trackHeight);
       }
 
-      // Draw clips
-      track.clips.forEach((clip) => {
-        drawClip(ctx, clip, trackIndex);
-      });
+      // Draw focused track outline (2px blue outline in the gap - top and bottom only)
+      if (isFocused) {
+        ctx.strokeStyle = '#84B5FF';
+        ctx.lineWidth = 2;
 
-      // Draw time selection only on selected tracks
+        // Top border (in the 2px gap above)
+        ctx.beginPath();
+        ctx.moveTo(0, y - 1);
+        ctx.lineTo(canvasWidth, y - 1);
+        ctx.stroke();
+
+        // Bottom border (in the 2px gap below)
+        ctx.beginPath();
+        ctx.moveTo(0, y + trackHeight + 1);
+        ctx.lineTo(canvasWidth, y + trackHeight + 1);
+        ctx.stroke();
+      }
+
+      // Draw time selection only on selected tracks (areas outside clips)
       if (timeSelection && isSelected) {
         const startX = LEFT_PADDING + timeSelection.startTime * pixelsPerSecond;
         const endX = LEFT_PADDING + timeSelection.endTime * pixelsPerSecond;
         const width = endX - startX;
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        // Draw default selection color across entire track
+        ctx.fillStyle = 'rgba(171, 231, 255, 0.2)';
         ctx.fillRect(startX, y, width, trackHeight);
       }
+
+      // Draw clips
+      track.clips.forEach((clip) => {
+        drawClip(ctx, clip, trackIndex, timeSelection, isSelected);
+      });
     });
   };
 
-  const drawClip = (ctx: CanvasRenderingContext2D, clip: Clip, trackIndex: number) => {
+  const drawClip = (ctx: CanvasRenderingContext2D, clip: Clip, trackIndex: number, timeSelection: TimeSelection | null, isSelected: boolean) => {
     const TRACK_GAP = 2;
+    const INITIAL_GAP = 2;
     const x = LEFT_PADDING + clip.startTime * pixelsPerSecond;
-    const y = trackIndex * (trackHeight + TRACK_GAP);
+    const y = INITIAL_GAP + trackIndex * (trackHeight + TRACK_GAP);
     const width = clip.duration * pixelsPerSecond;
     const height = trackHeight;
     const radius = 4;
@@ -115,7 +137,22 @@ export default function TrackCanvas({
     } else if (trackIndex === 2) {
       clipBgColor = clip.selected ? theme.clipBackgroundSelected.track3 : theme.clipBackground.track3;
     }
-    ctx.fillStyle = envelopeMode ? '#3a4a5a' : clipBgColor;
+
+    // Determine final clip color (use envelope mode colors if active)
+    let finalClipColor = clipBgColor;
+    if (envelopeMode) {
+      if (trackIndex === 0) {
+        finalClipColor = '#51637F'; // Blue
+      } else if (trackIndex === 1) {
+        finalClipColor = '#605F7F'; // Violet
+      } else if (trackIndex === 2) {
+        finalClipColor = '#856B81'; // Magenta
+      } else {
+        finalClipColor = '#51637F'; // Default to blue
+      }
+    }
+
+    ctx.fillStyle = finalClipColor;
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
     ctx.lineTo(x + width - radius, y);
@@ -203,6 +240,37 @@ export default function TrackCanvas({
     ctx.closePath();
     ctx.fill();
 
+    // Draw time selection highlight for clip headers
+    if (timeSelection && isSelected) {
+      const clipStartTime = clip.startTime;
+      const clipEndTime = clip.startTime + clip.duration;
+
+      // Check if time selection overlaps with this clip
+      if (timeSelection.endTime > clipStartTime && timeSelection.startTime < clipEndTime) {
+        // Calculate the overlap region
+        const overlapStart = Math.max(timeSelection.startTime, clipStartTime);
+        const overlapEnd = Math.min(timeSelection.endTime, clipEndTime);
+
+        const clipStartX = LEFT_PADDING + overlapStart * pixelsPerSecond;
+        const clipEndX = LEFT_PADDING + overlapEnd * pixelsPerSecond;
+        const clipWidth = clipEndX - clipStartX;
+
+        // Set header selection color based on track
+        let headerSelectionColor = '#78ECFF'; // Blue
+        if (trackIndex === 1) {
+          headerSelectionColor = '#C6DDFF'; // Violet
+        } else if (trackIndex === 2) {
+          headerSelectionColor = '#FFCFFF'; // Magenta
+        }
+
+        // Draw selection on the header area
+        ctx.fillStyle = headerSelectionColor;
+        ctx.beginPath();
+        ctx.rect(clipStartX, y + inset, clipWidth, CLIP_HEADER_HEIGHT);
+        ctx.fill();
+      }
+    }
+
     // Clip text to header area
     ctx.save();
     ctx.beginPath();
@@ -215,18 +283,48 @@ export default function TrackCanvas({
     ctx.fillText(clip.name, x + 5, y + CLIP_HEADER_HEIGHT / 2);
     ctx.restore();
 
-    // Draw waveform (adjusted to start below header)
-    drawWaveform(ctx, clip, x, y + CLIP_HEADER_HEIGHT, width, height - CLIP_HEADER_HEIGHT);
-
     // Draw envelope if it has points or if envelope mode is active
     if (envelopeMode || clip.envelopePoints.length > 0) {
       drawEnvelope(ctx, clip, trackIndex, x, y + CLIP_HEADER_HEIGHT, width, height - CLIP_HEADER_HEIGHT, envelopeMode);
     }
+
+    // Draw time selection highlight for clip bodies - after envelope, before waveform
+    if (timeSelection && isSelected) {
+      const clipStartTime = clip.startTime;
+      const clipEndTime = clip.startTime + clip.duration;
+
+      // Check if time selection overlaps with this clip
+      if (timeSelection.endTime > clipStartTime && timeSelection.startTime < clipEndTime) {
+        // Calculate the overlap region
+        const overlapStart = Math.max(timeSelection.startTime, clipStartTime);
+        const overlapEnd = Math.min(timeSelection.endTime, clipEndTime);
+
+        const clipStartX = LEFT_PADDING + overlapStart * pixelsPerSecond;
+        const clipEndX = LEFT_PADDING + overlapEnd * pixelsPerSecond;
+        const clipWidth = clipEndX - clipStartX;
+
+        // Set body selection color based on track
+        let bodySelectionColor = '#A0FDFF'; // Blue
+        if (trackIndex === 1) {
+          bodySelectionColor = '#DBF1FF'; // Violet
+        } else if (trackIndex === 2) {
+          bodySelectionColor = '#FFE7FF'; // Magenta
+        }
+
+        // Draw selection only on the waveform area (below the clip header)
+        ctx.fillStyle = bodySelectionColor;
+        ctx.fillRect(clipStartX, y + CLIP_HEADER_HEIGHT, clipWidth, height - CLIP_HEADER_HEIGHT);
+      }
+    }
+
+    // Draw waveform (adjusted to start below header) - drawn after envelope and selection so it appears on top
+    drawWaveform(ctx, clip, trackIndex, x, y + CLIP_HEADER_HEIGHT, width, height - CLIP_HEADER_HEIGHT);
   };
 
   const drawWaveform = (
     ctx: CanvasRenderingContext2D,
     clip: Clip,
+    trackIndex: number,
     x: number,
     y: number,
     width: number,
@@ -274,7 +372,17 @@ export default function TrackCanvas({
       return Math.pow(10, db / 20);
     };
 
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)'; // Black at 70% opacity
+    // Set waveform color based on track
+    let waveformColor = '#122332'; // Default blue
+    if (trackIndex === 0) {
+      waveformColor = '#122332'; // Blue
+    } else if (trackIndex === 1) {
+      waveformColor = '#1F1F33'; // Violet
+    } else if (trackIndex === 2) {
+      waveformColor = '#2F1D29'; // Magenta
+    }
+
+    ctx.strokeStyle = waveformColor;
     ctx.lineWidth = 1;
     ctx.beginPath();
 
