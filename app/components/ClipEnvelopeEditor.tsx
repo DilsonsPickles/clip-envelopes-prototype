@@ -378,6 +378,7 @@ export default function ClipEnvelopeEditor() {
                   startY: y,
                   deletedPoints: [],
                   originalTime: relativeTime,
+                  isNewPoint: true, // Mark this as a newly created point
                 };
               }
             }
@@ -592,8 +593,8 @@ export default function ClipEnvelopeEditor() {
           (y - envelopeDragStateRef.current.startY) ** 2
       );
 
-      // If no movement, delete the point
-      if (distance < 3) {
+      // If no movement, delete the point only if it's an existing point (not newly created)
+      if (distance < 3 && !envelopeDragStateRef.current.isNewPoint) {
         const { clip, pointIndex, trackIndex } = envelopeDragStateRef.current;
         const newTracks = [...tracks];
         const targetClip = newTracks[trackIndex].clips.find((c) => c.id === clip.id);
@@ -602,6 +603,7 @@ export default function ClipEnvelopeEditor() {
           setTracks(newTracks);
         }
       }
+      // If it's a new point with no movement, keep it (don't delete)
 
       // Hide tooltip
       setTooltip({ ...tooltip, visible: false });
@@ -618,6 +620,7 @@ export default function ClipEnvelopeEditor() {
 
   const updateCursor = (canvas: HTMLCanvasElement, x: number, y: number) => {
     let overClipHeader = false;
+    let overEnvelopeLine = false;
     let foundHoveredHeader: { clipId: number; trackIndex: number } | null = null;
 
     for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
@@ -636,8 +639,57 @@ export default function ClipEnvelopeEditor() {
           foundHoveredHeader = { clipId: clip.id, trackIndex };
           break;
         }
+
+        // Check if hovering over envelope line (only in envelope mode)
+        if (envelopeMode && x >= clipX && x <= clipX + clipWidth) {
+          const waveformY = trackY + CLIP_HEADER_HEIGHT;
+          const waveformHeight = TRACK_HEIGHT - CLIP_HEADER_HEIGHT;
+
+          // Helper to convert dB to Y position
+          const dbToY = (db: number) => {
+            const minDb = -60;
+            const maxDb = 12;
+            const normalized = (db - minDb) / (maxDb - minDb);
+            return waveformY + waveformHeight - normalized * waveformHeight;
+          };
+
+          const zeroDB_Y = dbToY(0);
+          const relativeX = (x - clipX) / clipWidth;
+          const time = relativeX * clip.duration;
+
+          // Find the envelope Y position at this X
+          let envelopeY = zeroDB_Y;
+
+          if (clip.envelopePoints.length === 0) {
+            envelopeY = zeroDB_Y;
+          } else {
+            const points = clip.envelopePoints;
+
+            if (time <= points[0].time) {
+              envelopeY = points[0].time === 0 ? dbToY(points[0].db) : zeroDB_Y;
+            } else if (time >= points[points.length - 1].time) {
+              envelopeY = dbToY(points[points.length - 1].db);
+            } else {
+              // Find the two points we're between
+              for (let i = 0; i < points.length - 1; i++) {
+                if (time >= points[i].time && time <= points[i + 1].time) {
+                  const t = (time - points[i].time) / (points[i + 1].time - points[i].time);
+                  const db = points[i].db + t * (points[i + 1].db - points[i].db);
+                  envelopeY = dbToY(db);
+                  break;
+                }
+              }
+            }
+          }
+
+          // Check if mouse is near the envelope line (within 8 pixels)
+          if (Math.abs(y - envelopeY) < 8) {
+            overEnvelopeLine = true;
+            break;
+          }
+        }
       }
-      if (overClipHeader) break;
+      if (overClipHeader || overEnvelopeLine) break;
     }
 
     // Update hovered clip header state
@@ -649,7 +701,14 @@ export default function ClipEnvelopeEditor() {
       setHoveredClipHeader(null);
     }
 
-    canvas.style.cursor = overClipHeader ? 'grab' : 'default';
+    // Set cursor based on what we're hovering over
+    if (overEnvelopeLine) {
+      canvas.style.cursor = 'copy'; // 'copy' shows a cursor with a plus
+    } else if (overClipHeader) {
+      canvas.style.cursor = 'grab';
+    } else {
+      canvas.style.cursor = 'default';
+    }
   };
 
   return (

@@ -616,18 +616,11 @@ export default function TrackCanvas({
 
     const zeroDB_Y = dbToY(0);
 
-    // Get envelope line color for envelope mode (when control points are visible)
-    let envelopeLineColor = { r: 162, g: 199, b: 255 }; // Default blue
-    if (trackIndex === 0) {
-      envelopeLineColor = { r: 162, g: 199, b: 255 }; // Blue #A2C7FF
-    } else if (trackIndex === 1) {
-      envelopeLineColor = { r: 193, g: 191, b: 254 }; // Violet #C1BFFE
-    } else if (trackIndex === 2) {
-      envelopeLineColor = { r: 232, g: 186, b: 224 }; // Magenta #E8BAE0
-    }
+    // Use solid red color for envelope line
+    const envelopeLineColor = 'red';
 
     // Draw the actual envelope line
-    ctx.strokeStyle = `rgb(${envelopeLineColor.r}, ${envelopeLineColor.g}, ${envelopeLineColor.b})`;
+    ctx.strokeStyle = envelopeLineColor;
     ctx.lineWidth = 2;
     ctx.lineCap = 'butt';
     ctx.lineJoin = 'miter';
@@ -664,8 +657,8 @@ export default function TrackCanvas({
       const px = x + (point.time / clip.duration) * width;
       const py = dbToY(point.db);
 
-      // Outer circle with clip color
-      ctx.fillStyle = `rgb(${envelopeLineColor.r}, ${envelopeLineColor.g}, ${envelopeLineColor.b})`;
+      // Outer circle with red color
+      ctx.fillStyle = envelopeLineColor;
       ctx.beginPath();
       ctx.arc(px, py, 5, 0, Math.PI * 2);
       ctx.fill();

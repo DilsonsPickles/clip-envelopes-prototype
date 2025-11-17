@@ -39,6 +39,7 @@ export interface EnvelopeDragState {
   startY: number;
   deletedPoints: EnvelopePoint[];
   originalTime: number;
+  isNewPoint?: boolean; // Track if this point was just created
 }
 
 export interface TimeSelection {
