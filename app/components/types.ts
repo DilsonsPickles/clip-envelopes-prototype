@@ -40,6 +40,7 @@ export interface EnvelopeDragState {
   deletedPoints: EnvelopePoint[];
   originalTime: number;
   isNewPoint?: boolean; // Track if this point was just created
+  hiddenPointIndices: number[]; // Indices of points hidden because dragged point passed them
 }
 
 export interface TimeSelection {

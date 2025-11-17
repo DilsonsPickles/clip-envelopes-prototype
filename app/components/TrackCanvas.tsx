@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Track, Clip, EnvelopePoint, TimeSelection } from './types';
+import { Track, Clip, EnvelopePoint, TimeSelection, EnvelopeDragState } from './types';
 import { theme } from '../theme';
 
 interface TrackCanvasProps {
@@ -14,6 +14,7 @@ interface TrackCanvasProps {
   focusedTrackIndex: number | null;
   timeSelection: TimeSelection | null;
   hoveredClipHeader: { clipId: number; trackIndex: number } | null;
+  envelopeDragState: EnvelopeDragState | null;
   onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseMove: (e: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseUp: (e: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -89,7 +90,7 @@ export default function TrackCanvas({
 
     ctx.scale(dpr, dpr);
     render(ctx);
-  }, [tracks, envelopeMode, trackHeight, pixelsPerSecond, canvasWidth, selectedTrackIndices, focusedTrackIndex, timeSelection, hoveredClipHeader]);
+  }, [tracks, envelopeMode, trackHeight, pixelsPerSecond, canvasWidth, selectedTrackIndices, focusedTrackIndex, timeSelection, hoveredClipHeader, envelopeDragState]);
 
   const render = (ctx: CanvasRenderingContext2D) => {
     const dpr = window.devicePixelRatio || 1;
@@ -148,12 +149,27 @@ export default function TrackCanvas({
 
       // Draw clips
       track.clips.forEach((clip) => {
-        drawClip(ctx, clip, trackIndex, timeSelection, isSelected);
+        // Determine if this clip has hidden points during drag
+        let hiddenIndices: number[] = [];
+        if (envelopeDragState &&
+            envelopeDragState.trackIndex === trackIndex &&
+            envelopeDragState.clip.id === clip.id) {
+          hiddenIndices = envelopeDragState.hiddenPointIndices;
+        }
+
+        drawClip(ctx, clip, trackIndex, timeSelection, isSelected, hiddenIndices);
       });
     });
   };
 
-  const drawClip = (ctx: CanvasRenderingContext2D, clip: Clip, trackIndex: number, timeSelection: TimeSelection | null, isSelected: boolean) => {
+  const drawClip = (
+    ctx: CanvasRenderingContext2D,
+    clip: Clip,
+    trackIndex: number,
+    timeSelection: TimeSelection | null,
+    isSelected: boolean,
+    hiddenPointIndices: number[] = []
+  ) => {
     const TRACK_GAP = 2;
     const INITIAL_GAP = 2;
     const x = LEFT_PADDING + clip.startTime * pixelsPerSecond;
@@ -320,7 +336,7 @@ export default function TrackCanvas({
 
     // Draw envelope fill if it has points or if envelope mode is active (only outside selection)
     if (envelopeMode || clip.envelopePoints.length > 0) {
-      drawEnvelopeFill(ctx, clip, trackIndex, x, y + CLIP_HEADER_HEIGHT, width, height - CLIP_HEADER_HEIGHT, envelopeMode, null, false);
+      drawEnvelopeFill(ctx, clip, trackIndex, x, y + CLIP_HEADER_HEIGHT, width, height - CLIP_HEADER_HEIGHT, envelopeMode, null, false, hiddenPointIndices);
     }
 
     // Draw time selection highlight - after envelope fill so it shows on top
@@ -352,7 +368,7 @@ export default function TrackCanvas({
 
         // Draw automation overlay on top of selection if clip has automation
         if (clip.envelopePoints.length > 0) {
-          drawEnvelopeFillInSelection(ctx, clip, trackIndex, clipStartX, y + CLIP_HEADER_HEIGHT, clipWidth, height - CLIP_HEADER_HEIGHT);
+          drawEnvelopeFillInSelection(ctx, clip, trackIndex, clipStartX, y + CLIP_HEADER_HEIGHT, clipWidth, height - CLIP_HEADER_HEIGHT, hiddenPointIndices);
         }
       }
     }
@@ -362,7 +378,7 @@ export default function TrackCanvas({
 
     // Draw envelope line and control points if in envelope mode - after waveform so line is on top
     if (envelopeMode) {
-      drawEnvelopeLine(ctx, clip, trackIndex, x, y + CLIP_HEADER_HEIGHT, width, height - CLIP_HEADER_HEIGHT);
+      drawEnvelopeLine(ctx, clip, trackIndex, x, y + CLIP_HEADER_HEIGHT, width, height - CLIP_HEADER_HEIGHT, hiddenPointIndices);
     }
   };
 
@@ -458,7 +474,8 @@ export default function TrackCanvas({
     selectionX: number,
     y: number,
     selectionWidth: number,
-    height: number
+    height: number,
+    hiddenPointIndices: number[] = []
   ) => {
     const zeroDB_Y = dbToYNonLinear(0, y, height);
     const clipBottom = y + height;
@@ -494,28 +511,40 @@ export default function TrackCanvas({
       ctx.lineTo(clipX, clipBottom);
       ctx.closePath();
     } else {
-      // Draw fill through control points
-      // Always use first point's dB value for the fill from clip start to first point
-      const startY = dbToYNonLinear(clip.envelopePoints[0].db, y, height);
-      ctx.moveTo(clipX, startY);
+      // Filter out hidden points for drawing the fill
+      const visiblePoints = clip.envelopePoints.filter((_, index) => !hiddenPointIndices.includes(index));
 
-      clip.envelopePoints.forEach((point) => {
-        const px = clipX + (point.time / clip.duration) * clipWidth;
-        const py = dbToYNonLinear(point.db, y, height);
-        ctx.lineTo(px, py);
-      });
+      if (visiblePoints.length === 0) {
+        // All points are hidden - draw default fill at 0dB
+        ctx.moveTo(clipX, zeroDB_Y);
+        ctx.lineTo(clipX + clipWidth, zeroDB_Y);
+        ctx.lineTo(clipX + clipWidth, clipBottom);
+        ctx.lineTo(clipX, clipBottom);
+        ctx.closePath();
+      } else {
+        // Draw fill through visible control points only
+        // Always use first visible point's dB value for the fill from clip start to first point
+        const startY = dbToYNonLinear(visiblePoints[0].db, y, height);
+        ctx.moveTo(clipX, startY);
 
-      const lastPoint = clip.envelopePoints[clip.envelopePoints.length - 1];
-      const endY = lastPoint.time < clip.duration ? dbToYNonLinear(lastPoint.db, y, height) : dbToYNonLinear(lastPoint.db, y, height);
+        visiblePoints.forEach((point) => {
+          const px = clipX + (point.time / clip.duration) * clipWidth;
+          const py = dbToYNonLinear(point.db, y, height);
+          ctx.lineTo(px, py);
+        });
 
-      if (lastPoint.time < clip.duration) {
-        ctx.lineTo(clipX + clipWidth, endY);
+        const lastPoint = visiblePoints[visiblePoints.length - 1];
+        const endY = lastPoint.time < clip.duration ? dbToYNonLinear(lastPoint.db, y, height) : dbToYNonLinear(lastPoint.db, y, height);
+
+        if (lastPoint.time < clip.duration) {
+          ctx.lineTo(clipX + clipWidth, endY);
+        }
+
+        // Complete the fill shape by going down to the bottom
+        ctx.lineTo(clipX + clipWidth, clipBottom);
+        ctx.lineTo(clipX, clipBottom);
+        ctx.closePath();
       }
-
-      // Complete the fill shape by going down to the bottom
-      ctx.lineTo(clipX + clipWidth, clipBottom);
-      ctx.lineTo(clipX, clipBottom);
-      ctx.closePath();
     }
 
     ctx.fill();
@@ -532,7 +561,8 @@ export default function TrackCanvas({
     height: number,
     envelopeMode: boolean,
     timeSelection: TimeSelection | null,
-    isSelected: boolean
+    isSelected: boolean,
+    hiddenPointIndices: number[] = []
   ) => {
     const zeroDB_Y = dbToYNonLinear(0, y, height);
     const clipBottom = y + height;
@@ -586,28 +616,40 @@ export default function TrackCanvas({
       ctx.lineTo(x, clipBottom);
       ctx.closePath();
     } else {
-      // Draw fill through control points
-      // Always use first point's dB value for the fill from clip start to first point
-      const startY = dbToYNonLinear(clip.envelopePoints[0].db, y, height);
-      ctx.moveTo(x, startY);
+      // Filter out hidden points for drawing the fill
+      const visiblePoints = clip.envelopePoints.filter((_, index) => !hiddenPointIndices.includes(index));
 
-      clip.envelopePoints.forEach((point) => {
-        const px = x + (point.time / clip.duration) * width;
-        const py = dbToYNonLinear(point.db, y, height);
-        ctx.lineTo(px, py);
-      });
+      if (visiblePoints.length === 0) {
+        // All points are hidden - draw default fill at 0dB
+        ctx.moveTo(x, zeroDB_Y);
+        ctx.lineTo(x + width, zeroDB_Y);
+        ctx.lineTo(x + width, clipBottom);
+        ctx.lineTo(x, clipBottom);
+        ctx.closePath();
+      } else {
+        // Draw fill through visible control points only
+        // Always use first visible point's dB value for the fill from clip start to first point
+        const startY = dbToYNonLinear(visiblePoints[0].db, y, height);
+        ctx.moveTo(x, startY);
 
-      const lastPoint = clip.envelopePoints[clip.envelopePoints.length - 1];
-      const endY = lastPoint.time < clip.duration ? dbToYNonLinear(lastPoint.db, y, height) : dbToYNonLinear(lastPoint.db, y, height);
+        visiblePoints.forEach((point) => {
+          const px = x + (point.time / clip.duration) * width;
+          const py = dbToYNonLinear(point.db, y, height);
+          ctx.lineTo(px, py);
+        });
 
-      if (lastPoint.time < clip.duration) {
-        ctx.lineTo(x + width, endY);
+        const lastPoint = visiblePoints[visiblePoints.length - 1];
+        const endY = lastPoint.time < clip.duration ? dbToYNonLinear(lastPoint.db, y, height) : dbToYNonLinear(lastPoint.db, y, height);
+
+        if (lastPoint.time < clip.duration) {
+          ctx.lineTo(x + width, endY);
+        }
+
+        // Complete the fill shape by going down to the bottom
+        ctx.lineTo(x + width, clipBottom);
+        ctx.lineTo(x, clipBottom);
+        ctx.closePath();
       }
-
-      // Complete the fill shape by going down to the bottom
-      ctx.lineTo(x + width, clipBottom);
-      ctx.lineTo(x, clipBottom);
-      ctx.closePath();
     }
 
     ctx.fill();
@@ -620,7 +662,8 @@ export default function TrackCanvas({
     x: number,
     y: number,
     width: number,
-    height: number
+    height: number,
+    hiddenPointIndices: number[] = []
   ) => {
     const zeroDB_Y = dbToYNonLinear(0, y, height);
 
@@ -639,27 +682,39 @@ export default function TrackCanvas({
       ctx.moveTo(x, zeroDB_Y);
       ctx.lineTo(x + width, zeroDB_Y);
     } else {
-      // Draw envelope through all control points (they all remain visible)
-      // Always use first point's dB value for the line from clip start to first point
-      const startY = dbToYNonLinear(clip.envelopePoints[0].db, y, height);
-      ctx.moveTo(x, startY);
+      // Filter out hidden points for drawing the line
+      const visiblePoints = clip.envelopePoints.filter((_, index) => !hiddenPointIndices.includes(index));
 
-      clip.envelopePoints.forEach((point) => {
-        const px = x + (point.time / clip.duration) * width;
-        const py = dbToYNonLinear(point.db, y, height);
-        ctx.lineTo(px, py);
-      });
+      if (visiblePoints.length === 0) {
+        // All points are hidden - draw default line at 0dB
+        ctx.moveTo(x, zeroDB_Y);
+        ctx.lineTo(x + width, zeroDB_Y);
+      } else {
+        // Draw envelope through visible control points only
+        // Always use first visible point's dB value for the line from clip start to first point
+        const startY = dbToYNonLinear(visiblePoints[0].db, y, height);
+        ctx.moveTo(x, startY);
 
-      const lastPoint = clip.envelopePoints[clip.envelopePoints.length - 1];
-      if (lastPoint.time < clip.duration) {
-        ctx.lineTo(x + width, dbToYNonLinear(lastPoint.db, y, height));
+        visiblePoints.forEach((point) => {
+          const px = x + (point.time / clip.duration) * width;
+          const py = dbToYNonLinear(point.db, y, height);
+          ctx.lineTo(px, py);
+        });
+
+        const lastPoint = visiblePoints[visiblePoints.length - 1];
+        if (lastPoint.time < clip.duration) {
+          ctx.lineTo(x + width, dbToYNonLinear(lastPoint.db, y, height));
+        }
       }
     }
 
     ctx.stroke();
 
-    // Draw all control points (they all remain visible in their original positions)
-    clip.envelopePoints.forEach((point) => {
+    // Draw control points (skip hidden ones)
+    clip.envelopePoints.forEach((point, index) => {
+      // Skip hidden points
+      if (hiddenPointIndices.includes(index)) return;
+
       const px = x + (point.time / clip.duration) * width;
       const py = dbToYNonLinear(point.db, y, height);
 

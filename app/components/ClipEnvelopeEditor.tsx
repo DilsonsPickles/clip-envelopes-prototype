@@ -255,6 +255,7 @@ export default function ClipEnvelopeEditor() {
                 startY: y,
                 deletedPoints: [],
                 originalTime: point.time,
+                hiddenPointIndices: [],
               };
               return true;
             }
@@ -399,6 +400,7 @@ export default function ClipEnvelopeEditor() {
                   deletedPoints: [],
                   originalTime: relativeTime,
                   isNewPoint: true, // Mark this as a newly created point
+                  hiddenPointIndices: [],
                 };
               }
             }
@@ -447,7 +449,7 @@ export default function ClipEnvelopeEditor() {
 
     // Handle envelope point dragging
     if (envelopeDragStateRef.current) {
-      const { clip, pointIndex, clipX, clipWidth, clipY, clipHeight, trackIndex } =
+      const { clip, pointIndex, clipX, clipWidth, clipY, clipHeight, trackIndex, originalTime } =
         envelopeDragStateRef.current;
 
       const relativeTime = Math.max(0, Math.min(clip.duration, ((x - clipX) / clipWidth) * clip.duration));
@@ -457,13 +459,31 @@ export default function ClipEnvelopeEditor() {
       const targetClip = newTracks[trackIndex].clips.find((c) => c.id === clip.id);
 
       if (targetClip && envelopeDragStateRef.current) {
-        // Check for snapping to other points' dB and time values (excluding the one we're dragging)
+        // Determine which points should be hidden (the dragged point has passed their X position)
+        const minTime = Math.min(originalTime, relativeTime);
+        const maxTime = Math.max(originalTime, relativeTime);
+        const hiddenIndices: number[] = [];
+
+        for (let i = 0; i < targetClip.envelopePoints.length; i++) {
+          if (i === pointIndex) continue;
+
+          const otherPoint = targetClip.envelopePoints[i];
+          // Hide points that are strictly between the original and current time positions
+          if (otherPoint.time > minTime && otherPoint.time < maxTime) {
+            hiddenIndices.push(i);
+          }
+        }
+
+        // Update hidden indices in drag state
+        envelopeDragStateRef.current.hiddenPointIndices = hiddenIndices;
+
+        // Check for snapping to other points' dB and time values (excluding hidden and dragged points)
         let snappedDb = db;
         let snappedTime = relativeTime;
 
         for (let i = 0; i < targetClip.envelopePoints.length; i++) {
-          // Skip the point we're currently dragging by index
-          if (i === pointIndex) continue;
+          // Skip the point we're currently dragging or hidden points
+          if (i === pointIndex || hiddenIndices.includes(i)) continue;
 
           const otherPoint = targetClip.envelopePoints[i];
 
@@ -577,13 +597,21 @@ export default function ClipEnvelopeEditor() {
           (y - envelopeDragStateRef.current.startY) ** 2
       );
 
-      // If no movement, delete the point only if it's an existing point (not newly created)
-      if (distance < 3 && !envelopeDragStateRef.current.isNewPoint) {
-        const { clip, pointIndex, trackIndex } = envelopeDragStateRef.current;
-        const newTracks = [...tracks];
-        const targetClip = newTracks[trackIndex].clips.find((c) => c.id === clip.id);
-        if (targetClip) {
+      const { clip, pointIndex, trackIndex, hiddenPointIndices } = envelopeDragStateRef.current;
+      const newTracks = [...tracks];
+      const targetClip = newTracks[trackIndex].clips.find((c) => c.id === clip.id);
+
+      if (targetClip) {
+        // If no movement, delete the point only if it's an existing point (not newly created)
+        if (distance < 3 && !envelopeDragStateRef.current.isNewPoint) {
           targetClip.envelopePoints.splice(pointIndex, 1);
+          setTracks(newTracks);
+        } else if (distance >= 3 && hiddenPointIndices.length > 0) {
+          // Point was moved - delete any hidden points that were passed over
+          // Remove points in reverse order to maintain indices
+          hiddenPointIndices.sort((a, b) => b - a).forEach(i => {
+            targetClip.envelopePoints.splice(i, 1);
+          });
           setTracks(newTracks);
         }
       }
@@ -774,6 +802,7 @@ export default function ClipEnvelopeEditor() {
             focusedTrackIndex={focusedTrackIndex}
             timeSelection={timeSelection}
             hoveredClipHeader={hoveredClipHeader}
+            envelopeDragState={envelopeDragStateRef.current}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
