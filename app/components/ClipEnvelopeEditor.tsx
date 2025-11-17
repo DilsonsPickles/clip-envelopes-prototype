@@ -11,7 +11,7 @@ import { Track, Clip, EnvelopePoint, DragState, EnvelopeDragState, TimeSelection
 import { theme } from '../theme';
 
 // Configuration
-const TRACK_HEIGHT = 150;
+const TRACK_HEIGHT = 114;
 const TRACK_GAP = 2;
 const PIXELS_PER_SECOND = 100;
 const CANVAS_WIDTH = 2000;
@@ -670,7 +670,7 @@ export default function ClipEnvelopeEditor() {
             <button
               className="h-[28px] px-3 text-sm rounded border"
               style={{
-                backgroundColor: theme.toolbar,
+                backgroundColor: '#CDCED7',
                 color: theme.text,
                 borderColor: theme.trackHeaderBorder,
               }}
@@ -689,8 +689,13 @@ export default function ClipEnvelopeEditor() {
 
           {/* Track list */}
           <div className="flex-1 overflow-y-auto">
-            {tracks.map((track) => (
-              <TrackHeader key={track.id} trackName={track.name} />
+            {tracks.map((track, index) => (
+              <TrackHeader
+                key={track.id}
+                trackName={track.name}
+                isSelected={selectedTrackIndices.includes(index)}
+                onSelect={() => setSelectedTrackIndices([index])}
+              />
             ))}
           </div>
         </div>
