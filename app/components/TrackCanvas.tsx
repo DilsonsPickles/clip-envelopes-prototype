@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Track, Clip, EnvelopePoint, TimeSelection, EnvelopeDragState } from './types';
+import { Track, Clip, EnvelopePoint, TimeSelection } from './types';
 import { theme } from '../theme';
 
 interface TrackCanvasProps {
@@ -14,7 +14,6 @@ interface TrackCanvasProps {
   focusedTrackIndex: number | null;
   timeSelection: TimeSelection | null;
   hoveredClipHeader: { clipId: number; trackIndex: number } | null;
-  envelopeDragState: EnvelopeDragState | null;
   onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseMove: (e: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseUp: (e: React.MouseEvent<HTMLCanvasElement>) => void;

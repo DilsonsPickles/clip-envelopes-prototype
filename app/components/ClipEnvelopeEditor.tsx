@@ -19,6 +19,8 @@ const CANVAS_WIDTH = 2000;
 const CLIP_HEADER_HEIGHT = 20;
 const LEFT_PADDING = 12;
 const INFINITY_ZONE_HEIGHT = 1; // Last 1px represents -infinity dB
+const SNAP_THRESHOLD_DB = 6; // Snap within 6dB of other points
+const SNAP_THRESHOLD_TIME = 0.05; // Snap within 0.05 seconds of other points horizontally
 
 // Non-linear dB scale conversion helpers
 const dbToYNonLinear = (db: number, y: number, height: number): number => {
@@ -449,42 +451,58 @@ export default function ClipEnvelopeEditor() {
         envelopeDragStateRef.current;
 
       const relativeTime = Math.max(0, Math.min(clip.duration, ((x - clipX) / clipWidth) * clip.duration));
-      const db = yToDbNonLinear(y, clipY, clipHeight);
-
-      // Show tooltip with dB value
-      setTooltip({
-        x: e.clientX,
-        y: e.clientY,
-        db,
-        visible: true,
-      });
+      let db = yToDbNonLinear(y, clipY, clipHeight);
 
       const newTracks = [...tracks];
       const targetClip = newTracks[trackIndex].clips.find((c) => c.id === clip.id);
+
       if (targetClip && envelopeDragStateRef.current) {
-        const { originalTime } = envelopeDragStateRef.current;
-
-        // Update the point position
-        targetClip.envelopePoints[pointIndex] = { time: relativeTime, db };
-
-        // Find which points should be hidden (crossed points between original and current position)
-        const minTime = Math.min(originalTime, relativeTime);
-        const maxTime = Math.max(originalTime, relativeTime);
-        const hiddenIndices: number[] = [];
+        // Check for snapping to other points' dB and time values (excluding the one we're dragging)
+        let snappedDb = db;
+        let snappedTime = relativeTime;
 
         for (let i = 0; i < targetClip.envelopePoints.length; i++) {
+          // Skip the point we're currently dragging by index
           if (i === pointIndex) continue;
 
           const otherPoint = targetClip.envelopePoints[i];
-          // Hide points that are strictly between the original and current positions
-          if (otherPoint.time > minTime && otherPoint.time < maxTime) {
-            hiddenIndices.push(i);
+
+          // Check vertical (dB) snapping
+          const dbDistance = Math.abs(db - otherPoint.db);
+          if (dbDistance < SNAP_THRESHOLD_DB) {
+            snappedDb = otherPoint.db;
+          }
+
+          // Check horizontal (time) snapping
+          const timeDistance = Math.abs(relativeTime - otherPoint.time);
+          if (timeDistance < SNAP_THRESHOLD_TIME) {
+            snappedTime = otherPoint.time;
           }
         }
 
-        envelopeDragStateRef.current.hiddenPointIndices = hiddenIndices;
+        // Show tooltip with snapped dB value
+        setTooltip({
+          x: e.clientX,
+          y: e.clientY,
+          db: snappedDb,
+          visible: true,
+        });
 
+        // Simply update the point position with snapped values
+        targetClip.envelopePoints[pointIndex] = { time: snappedTime, db: snappedDb };
+
+        // Sort the points and update the pointIndex to track the moved point
         targetClip.envelopePoints.sort((a, b) => a.time - b.time);
+
+        // Find the new index of the point we're dragging
+        const newPointIndex = targetClip.envelopePoints.findIndex(
+          (p) => p.time === snappedTime && p.db === snappedDb
+        );
+
+        if (newPointIndex !== -1) {
+          envelopeDragStateRef.current.pointIndex = newPointIndex;
+        }
+
         setTracks(newTracks);
       }
 
@@ -559,38 +577,13 @@ export default function ClipEnvelopeEditor() {
           (y - envelopeDragStateRef.current.startY) ** 2
       );
 
-      const { clip, pointIndex, trackIndex, clipX, clipWidth, originalTime } = envelopeDragStateRef.current;
-      const newTracks = [...tracks];
-      const targetClip = newTracks[trackIndex].clips.find((c) => c.id === clip.id);
-
-      if (targetClip) {
-        // If no movement, delete the point only if it's an existing point (not newly created)
-        if (distance < 3 && !envelopeDragStateRef.current.isNewPoint) {
+      // If no movement, delete the point only if it's an existing point (not newly created)
+      if (distance < 3 && !envelopeDragStateRef.current.isNewPoint) {
+        const { clip, pointIndex, trackIndex } = envelopeDragStateRef.current;
+        const newTracks = [...tracks];
+        const targetClip = newTracks[trackIndex].clips.find((c) => c.id === clip.id);
+        if (targetClip) {
           targetClip.envelopePoints.splice(pointIndex, 1);
-          setTracks(newTracks);
-        } else if (distance >= 3) {
-          // Point was moved - delete any points that were crossed
-          const finalTime = targetClip.envelopePoints[pointIndex].time;
-          const minTime = Math.min(originalTime, finalTime);
-          const maxTime = Math.max(originalTime, finalTime);
-
-          // Find and remove points between original and final position
-          const pointsToRemove: number[] = [];
-          for (let i = 0; i < targetClip.envelopePoints.length; i++) {
-            if (i === pointIndex) continue;
-
-            const otherPoint = targetClip.envelopePoints[i];
-            // Delete points that are strictly between the original and final positions
-            if (otherPoint.time > minTime && otherPoint.time < maxTime) {
-              pointsToRemove.push(i);
-            }
-          }
-
-          // Remove points in reverse order to maintain indices
-          pointsToRemove.sort((a, b) => b - a).forEach(i => {
-            targetClip.envelopePoints.splice(i, 1);
-          });
-
           setTracks(newTracks);
         }
       }
@@ -781,7 +774,6 @@ export default function ClipEnvelopeEditor() {
             focusedTrackIndex={focusedTrackIndex}
             timeSelection={timeSelection}
             hoveredClipHeader={hoveredClipHeader}
-            envelopeDragState={envelopeDragStateRef.current}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
