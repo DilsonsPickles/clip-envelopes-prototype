@@ -35,9 +35,10 @@ audacity-design-system/
 │   ├── core/                 # Core types and utilities
 │   └── tokens/               # Design tokens and themes
 ├── apps/
-│   └── (future demos)
+│   └── demo/
+│       └── clip-envelope/    # Clip envelope editing demo
 ├── docs/                     # Architecture documentation
-└── clip-envelope/            # Current demo (will migrate to apps/)
+└── CLAUDE.md                 # AI assistant guidance
 ```
 
 ## 🚀 Getting Started
@@ -96,7 +97,7 @@ The clip envelope prototype demonstrates:
 ### Running the Demo
 
 ```bash
-cd clip-envelope
+cd apps/demo/clip-envelope
 npm install
 npm run dev
 ```
