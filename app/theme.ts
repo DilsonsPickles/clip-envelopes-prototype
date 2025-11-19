@@ -171,8 +171,8 @@ export const lightTheme: Theme = {
   // Envelope
   envelopeLine: '#ff6600',
   envelopeLineHover: '#ffaa00',
-  envelopeFill: 'rgba(255, 102, 0, 0.15)',
-  envelopeFillIdle: 'rgba(255, 102, 0, 0.35)',
+  envelopeFill: 'rgba(255, 255, 255, 0.5)',
+  envelopeFillIdle: 'rgba(0, 0, 0, 0.15)',
   envelopeHitZone: 'rgba(255, 102, 0, 0.15)',
   envelopePoint: '#ff6600',
   envelopePointCenter: '#fff',
@@ -270,8 +270,8 @@ export const darkTheme: Theme = {
   // Envelope
   envelopeLine: '#ff6600',
   envelopeLineHover: '#ffaa00',
-  envelopeFill: 'rgba(255, 102, 0, 0.15)',
-  envelopeFillIdle: 'rgba(255, 102, 0, 0.35)',
+  envelopeFill: 'rgba(255, 255, 255, 0.5)',
+  envelopeFillIdle: 'rgba(0, 0, 0, 0.15)',
   envelopeHitZone: 'rgba(255, 102, 0, 0.15)',
   envelopePoint: '#ff6600',
   envelopePointCenter: '#fff',

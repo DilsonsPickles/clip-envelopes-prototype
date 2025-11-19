@@ -538,36 +538,9 @@ export default function ClipEnvelopeEditor() {
           }
 
           // Wide zone (16px) for segment dragging, narrow zone (4px) for adding points
-          if (minDistance <= 16 && minDistance > 4) {
-            // Start segment drag
-
-            // If no points exist, create two points at 0dB at start and end, then drag them together
-            if (clip.envelopePoints.length === 0) {
-              const newTracks = [...tracks];
-              const targetClip = newTracks[trackIndex].clips.find((c) => c.id === clip.id);
-              if (targetClip) {
-                targetClip.envelopePoints = [
-                  { time: 0, db: 0 },
-                  { time: clip.duration, db: 0 }
-                ];
-                setTracks(newTracks);
-
-                envelopeSegmentDragStateRef.current = {
-                  clip: targetClip,
-                  segmentStartIndex: 0,
-                  segmentEndIndex: 1,
-                  trackIndex,
-                  clipX,
-                  clipWidth,
-                  clipY,
-                  clipHeight,
-                  startY: y,
-                  startDb1: 0,
-                  startDb2: 0,
-                };
-              }
-              return true;
-            }
+          // If no points exist, treat entire zone as point addition zone
+          if (minDistance <= 16 && minDistance > 4 && clip.envelopePoints.length > 0) {
+            // Start segment drag (only if clip has at least one point)
 
             // Determine which two points define this segment
             let segmentStartIndex = -1;
@@ -615,7 +588,7 @@ export default function ClipEnvelopeEditor() {
               };
             }
             return true;
-          } else if (minDistance <= 4) {
+          } else if (minDistance <= 16) {
             // Add new point (narrow zone)
             const relativeTime = ((x - clipX) / clipWidth) * clip.duration;
             const db = yToDbNonLinear(y, clipY, clipHeight);
@@ -1055,15 +1028,17 @@ export default function ClipEnvelopeEditor() {
 
           const distance = Math.abs(y - envelopeY);
 
-          // Check for segment hover (4-16px range)
-          if (distance > 4 && distance <= 16) {
+          // Check for segment hover (4-16px range) - only if clip has at least one point
+          if (distance > 4 && distance <= 16 && clip.envelopePoints.length > 0) {
             overEnvelopeSegment = true;
             foundHoveredSegment = { trackIndex, clipId: clip.id, segmentIndex };
             break;
           }
 
-          // Check if mouse is near the envelope line for adding points (within 4 pixels)
-          if (distance <= 4) {
+          // Check if mouse is near the envelope line for adding points
+          // If no points, use wider zone (16px), otherwise narrow zone (4px)
+          const addPointThreshold = clip.envelopePoints.length === 0 ? 16 : 4;
+          if (distance <= addPointThreshold) {
             overEnvelopeLine = true;
             break;
           }

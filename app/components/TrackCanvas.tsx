@@ -748,39 +748,8 @@ export default function TrackCanvas({
     // Check if there's a selection on this track
     const hasSelection = timeSelection && isSelected;
 
-    // Get envelope fill color based on track index
-    // Use more saturated colors based on clip background colors with transparency
-    let envelopeFillColor = 'rgba(141, 212, 255, 0.5)'; // Default blue with 50% opacity
-    if (envelopeMode) {
-      // Colors when envelope mode is on (matching selection overlay colors)
-      if (trackIndex === 0) {
-        envelopeFillColor = 'rgba(141, 212, 255, 0.5)'; // Blue with transparency
-      } else if (trackIndex === 1) {
-        envelopeFillColor = 'rgba(200, 216, 255, 0.5)'; // Violet with transparency
-      } else if (trackIndex === 2) {
-        envelopeFillColor = 'rgba(240, 200, 240, 0.5)'; // Magenta with transparency
-      }
-    } else {
-      if (hasSelection) {
-        // Selected state - use colors that work with selection highlight
-        if (trackIndex === 0) {
-          envelopeFillColor = 'rgba(91, 138, 201, 0.5)'; // Blue (darker for selection) with transparency
-        } else if (trackIndex === 1) {
-          envelopeFillColor = 'rgba(135, 133, 214, 0.5)'; // Violet (darker for selection) with transparency
-        } else if (trackIndex === 2) {
-          envelopeFillColor = 'rgba(201, 120, 184, 0.5)'; // Magenta (darker for selection) with transparency
-        }
-      } else {
-        // Normal state - more saturated colors (closer to clip bg) with transparency
-        if (trackIndex === 0) {
-          envelopeFillColor = 'rgba(123, 160, 217, 0.5)'; // Blue (more saturated) with transparency
-        } else if (trackIndex === 1) {
-          envelopeFillColor = 'rgba(167, 165, 230, 0.5)'; // Violet (more saturated) with transparency
-        } else if (trackIndex === 2) {
-          envelopeFillColor = 'rgba(217, 152, 200, 0.5)'; // Magenta (more saturated) with transparency
-        }
-      }
-    }
+    // Use theme colors for envelope fill
+    const envelopeFillColor = envelopeMode ? theme.envelopeFill : theme.envelopeFillIdle;
 
     // Draw the fill
     ctx.fillStyle = envelopeFillColor;
