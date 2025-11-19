@@ -173,14 +173,28 @@ export default function TrackCanvas({
         const startX = LEFT_PADDING + timeSelection.startTime * pixelsPerSecond;
         const endX = LEFT_PADDING + timeSelection.endTime * pixelsPerSecond;
         const width = endX - startX;
+        const radius = 4;
 
-        // Draw selection color - less opaque on unselected tracks
+        // Draw selection color with rounded corners - less opaque on unselected tracks
         if (isSelected) {
           ctx.fillStyle = 'rgba(171, 231, 255, 0.2)';
         } else {
           ctx.fillStyle = 'rgba(171, 231, 255, 0.08)'; // Less opaque for unselected tracks
         }
-        ctx.fillRect(startX, y, width, currentTrackHeight);
+
+        // Draw rounded rectangle for time selection
+        ctx.beginPath();
+        ctx.moveTo(startX + radius, y);
+        ctx.lineTo(startX + width - radius, y);
+        ctx.arcTo(startX + width, y, startX + width, y + radius, radius);
+        ctx.lineTo(startX + width, y + currentTrackHeight - radius);
+        ctx.arcTo(startX + width, y + currentTrackHeight, startX + width - radius, y + currentTrackHeight, radius);
+        ctx.lineTo(startX + radius, y + currentTrackHeight);
+        ctx.arcTo(startX, y + currentTrackHeight, startX, y + currentTrackHeight - radius, radius);
+        ctx.lineTo(startX, y + radius);
+        ctx.arcTo(startX, y, startX + radius, y, radius);
+        ctx.closePath();
+        ctx.fill();
       }
 
       // Draw clips
@@ -370,10 +384,48 @@ export default function TrackCanvas({
           headerSelectionColor = '#FFCFFF'; // Magenta
         }
 
-        // Draw selection on the header area
+        // Draw selection on the header area with rounded corners matching clip header
         ctx.fillStyle = headerSelectionColor;
         ctx.beginPath();
-        ctx.rect(clipStartX, y + inset, clipWidth, CLIP_HEADER_HEIGHT);
+
+        // Determine if this is the left edge (round top-left corner)
+        const isLeftEdge = overlapStart === clipStartTime;
+        // Determine if this is the right edge (round top-right corner)
+        const isRightEdge = overlapEnd === clipEndTime;
+
+        const selectionY = y + inset;
+        const selectionHeight = CLIP_HEADER_HEIGHT;
+
+        if (isLeftEdge && isRightEdge) {
+          // Both edges - round both top corners
+          ctx.moveTo(clipStartX + radius, selectionY);
+          ctx.lineTo(clipEndX - radius, selectionY);
+          ctx.quadraticCurveTo(clipEndX, selectionY, clipEndX, selectionY + radius);
+          ctx.lineTo(clipEndX, selectionY + selectionHeight);
+          ctx.lineTo(clipStartX, selectionY + selectionHeight);
+          ctx.lineTo(clipStartX, selectionY + radius);
+          ctx.quadraticCurveTo(clipStartX, selectionY, clipStartX + radius, selectionY);
+        } else if (isLeftEdge) {
+          // Left edge only - round top-left corner
+          ctx.moveTo(clipStartX + radius, selectionY);
+          ctx.lineTo(clipEndX, selectionY);
+          ctx.lineTo(clipEndX, selectionY + selectionHeight);
+          ctx.lineTo(clipStartX, selectionY + selectionHeight);
+          ctx.lineTo(clipStartX, selectionY + radius);
+          ctx.quadraticCurveTo(clipStartX, selectionY, clipStartX + radius, selectionY);
+        } else if (isRightEdge) {
+          // Right edge only - round top-right corner
+          ctx.moveTo(clipStartX, selectionY);
+          ctx.lineTo(clipEndX - radius, selectionY);
+          ctx.quadraticCurveTo(clipEndX, selectionY, clipEndX, selectionY + radius);
+          ctx.lineTo(clipEndX, selectionY + selectionHeight);
+          ctx.lineTo(clipStartX, selectionY + selectionHeight);
+        } else {
+          // Middle section - no rounded corners
+          ctx.rect(clipStartX, selectionY, clipWidth, selectionHeight);
+        }
+
+        ctx.closePath();
         ctx.fill();
       }
     }
