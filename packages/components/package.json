@@ -1,0 +1,49 @@
+{
+  "name": "@audacity-ui/components",
+  "version": "0.1.0",
+  "description": "UI component library for Audacity Design System",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./style.css": "./dist/index.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --external react --external react-dom",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch --external react --external react-dom",
+    "lint": "echo 'No linting configured yet'"
+  },
+  "keywords": [
+    "audacity",
+    "design-system",
+    "components",
+    "react",
+    "ui"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DilsonsPickles/audacity-design-system.git",
+    "directory": "packages/components"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}

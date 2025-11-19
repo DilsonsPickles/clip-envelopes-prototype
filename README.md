@@ -27,13 +27,25 @@ pnpm add @audacity-ui/tokens
 - `darkTheme` - Dark theme configuration
 - `Theme` interface
 
+### `@audacity-ui/components`
+UI component library with track controls and interface elements.
+
+```bash
+pnpm add @audacity-ui/components
+```
+
+**Components:**
+- `TrackControlPanel` - Complete track control interface with volume, mute/solo, and effects
+
 ## 🏗️ Structure
 
 ```
 audacity-design-system/
 ├── packages/
 │   ├── core/                 # Core types and utilities
-│   └── tokens/               # Design tokens and themes
+│   ├── tokens/               # Design tokens and themes
+│   └── components/           # UI component library
+│       └── TrackControlPanel # Track control panel component
 ├── apps/
 │   └── demo/
 │       └── clip-envelope/    # Clip envelope editing demo
@@ -118,7 +130,8 @@ Open [http://localhost:3000](http://localhost:3000) to view the prototype.
 - [x] Setup monorepo infrastructure
 - [x] Create `@audacity-ui/core` package
 - [x] Create `@audacity-ui/tokens` package
-- [ ] Create `@audacity-ui/components` (basic UI components)
+- [x] Create `@audacity-ui/components` (basic UI components)
+  - [x] TrackControlPanel component
 - [ ] Create `@audacity-ui/audio-components` (complex audio components)
 - [ ] Setup Storybook for component documentation
 - [ ] Migrate demo to use published packages
