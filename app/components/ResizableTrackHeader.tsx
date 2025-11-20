@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import TrackHeader from './TrackHeader';
+import { ResizablePanel, TrackControlPanel } from '@audacity-ui/components';
 import { Track } from './types';
 
 interface ResizableTrackHeaderProps {
@@ -25,97 +24,40 @@ export default function ResizableTrackHeader({
   onHeightChange,
   isFirstTrack = false,
 }: ResizableTrackHeaderProps) {
-  const [isResizing, setIsResizing] = useState(false);
-  const [resizeCursor, setResizeCursor] = useState(false);
-  const resizeStartRef = useRef<{ y: number; height: number } | null>(null);
-
-  // Add document-level event listeners for dragging beyond component bounds
-  useEffect(() => {
-    if (!isResizing) return;
-
-    const handleDocumentMouseMove = (e: MouseEvent) => {
-      if (resizeStartRef.current) {
-        const deltaY = e.clientY - resizeStartRef.current.y;
-        const newHeight = Math.max(44, resizeStartRef.current.height + deltaY);
-        onHeightChange(newHeight);
-      }
-    };
-
-    const handleDocumentMouseUp = () => {
-      setIsResizing(false);
-      resizeStartRef.current = null;
-    };
-
-    document.addEventListener('mousemove', handleDocumentMouseMove);
-    document.addEventListener('mouseup', handleDocumentMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleDocumentMouseMove);
-      document.removeEventListener('mouseup', handleDocumentMouseUp);
-    };
-  }, [isResizing, onHeightChange]);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isResizing) {
-      // Check if hovering over the bottom edge of the track header (last 8px)
-      const rect = e.currentTarget.getBoundingClientRect();
-      const y = e.clientY - rect.top;
-      const topPadding = isFirstTrack ? 2 : 0;
-      const trackBottom = topPadding + height;
-      const resizeZoneStart = trackBottom - 8; // 8px resize zone at bottom of track
-      const inResizeZone = y >= resizeZoneStart && y <= trackBottom;
-
-      setResizeCursor(inResizeZone);
-    }
-  };
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const topPadding = isFirstTrack ? 2 : 0;
-    const trackBottom = topPadding + height;
-    const resizeZoneStart = trackBottom - 8;
-    const inResizeZone = y >= resizeZoneStart && y <= trackBottom;
-
-    if (inResizeZone) {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsResizing(true);
-      resizeStartRef.current = { y: e.clientY, height };
-    }
-  };
-
-  const handleMouseLeave = () => {
-    if (!isResizing) {
-      setResizeCursor(false);
-    }
+  // Determine which height variant to use for TrackControlPanel
+  const getHeightVariant = (): 'default' | 'truncated' | 'collapsed' => {
+    if (height < 44) return 'collapsed';
+    if (height < 80) return 'truncated';
+    return 'default';
   };
 
   return (
-    <div
-      style={{
-        marginTop: isFirstTrack ? '2px' : '0',
-        marginBottom: '2px',
-        position: 'relative',
-      }}
-    >
-      <div
-        style={{
-          cursor: resizeCursor ? 'ns-resize' : 'default',
-          position: 'relative',
-        }}
-        onMouseMove={handleMouseMove}
-        onMouseDown={handleMouseDown}
-        onMouseLeave={handleMouseLeave}
+    <div style={{ position: 'relative' }}>
+      {/* Focus border */}
+      {isFocused && (
+        <>
+          <div style={{ position: 'absolute', top: '-2px', left: 0, right: 0, height: '2px', backgroundColor: '#84B5FF', zIndex: 10 }} />
+          <div style={{ position: 'absolute', bottom: '-2px', left: 0, right: 0, height: '2px', backgroundColor: '#84B5FF', zIndex: 10 }} />
+          <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '2px', backgroundColor: '#84B5FF', zIndex: 10 }} />
+        </>
+      )}
+
+      <ResizablePanel
+        initialHeight={height}
+        minHeight={44}
+        resizeEdge="bottom"
+        resizeThreshold={8}
+        onHeightChange={onHeightChange}
+        isFirstPanel={isFirstTrack}
       >
-        <TrackHeader
-          trackName={track.name}
-          isSelected={isSelected}
-          isFocused={isFocused}
-          height={height}
-          onSelect={onSelect}
-        />
-      </div>
+        <div onClick={onSelect} style={{ height: '100%' }}>
+          <TrackControlPanel
+            trackName={track.name}
+            height={getHeightVariant()}
+            state={isSelected ? 'active' : 'idle'}
+          />
+        </div>
+      </ResizablePanel>
     </div>
   );
 }

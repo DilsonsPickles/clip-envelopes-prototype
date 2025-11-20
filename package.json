@@ -11,7 +11,8 @@
   "dependencies": {
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "next": "16.0.2"
+    "next": "16.0.2",
+    "@audacity-ui/components": "file:../../../packages/components"
   },
   "devDependencies": {
     "typescript": "^5",
